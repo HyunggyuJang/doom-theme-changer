@@ -1,4 +1,4 @@
-;;; theme-changer.el --- Sunrise/Sunset Theme Changer for Emacs
+;;; theme-changer.el --- Sunrise/Sunset Theme Changer for Emacs -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2011-2013 Joshua B. Griffith
 
@@ -69,23 +69,15 @@
 
 ;;; Code:
 
-(eval-when-compile
-  (require 'cl-lib))
+(require 'cl-lib)
 (require 'solar)
 
-(defvar theme-changer-mode "deftheme"
-  "Specify the theme change mode: \"color-theme\" or Emacs 24's \"deftheme\".")
+(defvar doom-theme)
 
 (defcustom theme-changer-delay-seconds 0
   "Specify the delay seconds when switch themes at sunrise and sunset."
   :type 'integer
   :group 'theme-changer)
-
-(defvar theme-changer-pre-change-functions (list)
-  "Functions to run before changing themes.  Takes one argument of theme name being disabled.")
-
-(defvar theme-changer-post-change-functions (list)
-  "Functions to run after changing themes.  Takes one argument of theme name being enabled.")
 
 (defun theme-changer-hour-fraction-to-time (date hour-fraction)
   (let*
@@ -119,41 +111,15 @@
       (setq sunset-time (encode-time (decode-time sunset-time))))
     (list sunrise-time sunset-time)))
 
-(defun theme-changer-today () (calendar-current-date))
+(defsubst theme-changer-today () (calendar-current-date))
 
 (defun theme-changer-tomorrow ()
   (calendar-gregorian-from-absolute
    (+ 1 (calendar-absolute-from-gregorian (theme-changer-today)))))
 
-(defun theme-changer-add-second (time)
+(defsubst theme-changer-add-second (time)
   (let ((newtime (time-add time (seconds-to-time 1))))
-    (if (> emacs-major-version 26)
-        (encode-time (decode-time newtime))
-      newtime)))
-
-(defun theme-changer-switch-theme (old new)
-  "Change the theme from OLD to NEW.
-
-Uses Emacs 24's built-in theme facility (\"deftheme\") or
-color-theme, depending on THEME-CHANGER-MODE.
-
-NEW may be a list of themes, in which case a random theme is
-chosen from that list.
-
-If NEW is set to nil, shall switch to default Emacs theme.
-
-Returns the theme that was enabled."
-  (let ((new (if (listp new)
-                 (elt new (random (length new)))
-               new))
-        (enable (if (not (string= theme-changer-mode "deftheme"))
-                    (lambda () (apply (symbol-function new) '()))
-                  (lambda () (load-theme new t)))))
-    (run-hook-with-args 'theme-changer-pre-change-functions old)
-    (disable-theme old)
-    (if new (funcall enable))
-    (run-hook-with-args 'theme-changer-post-change-functions new)
-    new))
+    (encode-time (decode-time newtime))))
 
 ;;;###autoload
 (defun hgj/change-theme (day-theme night-theme)
@@ -165,7 +131,7 @@ Usually, you'll want bright one as your day-time's
 and darker for your night sight."
   (let* ((now (current-time))
          (sunrise-tomorrow (cl-first (theme-changer-sunrise-sunset-times
-                                   (theme-changer-tomorrow)))))
+                                      (theme-changer-tomorrow)))))
     (cl-destructuring-bind (sunrise-today sunset-today)
         (theme-changer-sunrise-sunset-times (theme-changer-today))
       (cl-destructuring-bind (next-change . theme)
@@ -174,25 +140,11 @@ and darker for your night sight."
                 ((time-less-p now sunset-today)
                  (cons sunset-today day-theme))
                 (t (cons sunrise-tomorrow night-theme)))
-        (let ((old-theme (setq doom-theme theme)))
-          (run-at-time (theme-changer-add-second next-change) nil
-                       'change-theme day-theme night-theme old-theme))))))
-
-(defun change-theme (day-theme night-theme &optional old-theme)
-  (let* ((now (current-time))
-         (sunrise-tomorrow (cl-first (theme-changer-sunrise-sunset-times
-                                   (theme-changer-tomorrow)))))
-    (cl-destructuring-bind (sunrise-today sunset-today)
-        (theme-changer-sunrise-sunset-times (theme-changer-today))
-      (cl-destructuring-bind (next-change . theme)
-          (cond ((time-less-p now sunrise-today)
-                 (cons sunrise-today night-theme))
-                ((time-less-p now sunset-today)
-                 (cons sunset-today day-theme))
-                (t (cons sunrise-tomorrow night-theme)))
-        (let ((old-theme (theme-changer-switch-theme old-theme theme)))
-          (run-at-time (theme-changer-add-second next-change) nil
-                       'change-theme day-theme night-theme old-theme))))))
+        (if doom-theme
+            (load-theme theme t)
+          (setq doom-theme theme))
+        (run-at-time (theme-changer-add-second next-change) nil
+                     'hgj/change-theme day-theme night-theme)))))
 
 (provide 'theme-changer)
 
